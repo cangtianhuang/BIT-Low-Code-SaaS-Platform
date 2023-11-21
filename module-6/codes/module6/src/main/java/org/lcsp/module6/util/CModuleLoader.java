@@ -1,4 +1,4 @@
-package org.lcsp.module6;
+package org.lcsp.module6.util;
 
 
 import java.io.*;

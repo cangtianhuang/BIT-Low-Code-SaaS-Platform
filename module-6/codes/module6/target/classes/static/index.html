@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Module Management</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <h1 class="mt-4 mb-4">Module Management</h1>
+
+    <button class="btn btn-primary" data-toggle="modal" data-target="#importModal">Import Module</button>
+
+    <hr/>
+
+    <h2>Existing Modules</h2>
+    <table class="table" id="moduleTable">
+        <thead>
+        <tr>
+            <th>Id</th>
+            <th>GroupId</th>
+            <th>ArtifactId:Version</th>
+            <th>Description</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- Existing modules will be populated here -->
+        </tbody>
+    </table>
+</div>
+
+<!-- Import Modal -->
+<div class="modal fade" id="importModal" tabindex="-1" role="dialog" aria-labelledby="importModalLabel"
+     aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importModalLabel">Import a new module</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="jarFile">Upload JAR file:<span style="color: red;">*</span></label>
+                        <input type="file" class="form-control-file" id="jarFile" name="jarFile" required
+                               accept=".jar,.war">
+                    </div>
+                    <div class="form-group">
+                        <label for="groupId">Group ID:<span style="color: red;">*</span></label>
+                        <input type="text" class="form-control" id="groupId" name="groupId" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="artifactId">Artifact ID:<span style="color: red;">*</span></label>
+                        <input type="text" class="form-control" id="artifactId" name="artifactId" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="version">Version:<span style="color: red;">*</span></label>
+                        <input type="text" class="form-control" id="version" name="version" required>
+                    </div>
+                    <div id="dependencyTemplate" style="display:none">
+                        <div class="dependency-group form-group d-flex">
+                            <input type="text" class="form-control dependencyGroupId" placeholder="Group ID">
+                            <input type="text" class="form-control dependencyArtifactId" placeholder="Artifact ID">
+                            <input type="text" class="form-control dependencyVersion" placeholder="Version">
+                            <button type="button" class="removeDependency btn btn-danger ml-auto close"
+                                    aria-label="Remove">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="dependencies"></div>
+                    <button id="addDependency" type="button" class="btn btn-primary">Add Dependency</button>
+                    <div class="form-group">
+                        <label for="description">Description:</label>
+                        <input type="text" class="form-control" id="description" name="description">
+                    </div>
+                    <div class="form-group">
+                        <label for="detailedDescription">Detailed Description:</label>
+                        <input type="text" class="form-control" id="detailedDescription" name="detailedDescription">
+                    </div>
+                    <div class="form-group">
+                        <label for="usageExample">Usage Example:</label>
+                        <input type="text" class="form-control" id="usageExample" name="usageExample">
+                    </div>
+                    <div class="form-group">
+                        <label for="notes">Notes:</label>
+                        <input type="text" class="form-control" id="notes" name="notes">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Import</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+    $(document).ready(function () {
+        let tbody = $('#moduleTable tbody');
+        let modal = $('#importModal');
+        let form = $('#importForm');
+        let currentId = null; // Keep track of the current module id for update
+        // List all modules
+        function listModules() {
+            $.ajax({
+                url: '/api/module',
+                type: 'GET',
+                success: function (data) {
+                    // Clear the existing table contents
+                    tbody.empty();
+                    // Loop through the data and add each module to the table
+                    for (let i = 0; i < data.length; i++) {
+                        let row = $('<tr/>');
+                        row.append($('<td/>').text(data[i].id));
+                        row.append($('<td/>').text(data[i].groupId));
+                        row.append($('<td/>').text(data[i].artifactId + ':' + data[i].version));
+                        row.append($('<td/>').text(data[i].description));
+                        let deleteButton = $('<button/>').text('Delete').click(function () {
+                            deleteModule(data[i].id);
+                        });
+                        let updateButton = $('<button/>').text('Update').click(function () {
+                            currentId = data[i].id;
+                            modal.modal('show');
+                        });
+                        row.append($('<td/>').append(deleteButton, updateButton));
+                        tbody.append(row);
+                    }
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        form.on('submit', function (e) {
+            e.preventDefault();
+            let formData = new FormData(this);
+            // Collect dependencies
+            let dependencies = [];
+            let allFilled = true;
+            $('.dependency-group').not('#dependencyTemplate .dependency-group').each(function () {
+                let groupId = $(this).find('#dependencyGroupId').val();
+                let artifactId = $(this).find('#dependencyArtifactId').val();
+                let version = $(this).find('#dependencyVersion').val();
+                if (groupId && artifactId && version) {
+                    dependencies.push({
+                        groupId: groupId,
+                        artifactId: artifactId,
+                        version: version
+                    });
+                } else {
+                    allFilled = false;
+                    alert('Please fill in all required fields.');
+                }
+            });
+            if (!formData.get('jarFile') || !formData.get('groupId') || !formData.get('artifactId') || !formData.get('version')) {
+                alert('Please fill in all required fields.');
+            } else if (!allFilled) {
+                alert('Please fill in all fields of each dependency.');
+            } else {
+                formData.set('module', JSON.stringify({
+                    groupId: formData.get('groupId'),
+                    artifactId: formData.get('artifactId'),
+                    version: formData.get('version'),
+                    dependencies: dependencies,
+                    description: formData.get('description'),
+                    detailedDescription: formData.get('detailedDescription'),
+                    usageExample: formData.get('usageExample'),
+                    notes: formData.get('notes')
+                }));
+                let url = '/api/module';
+                let type = 'POST';
+                // If currentId is not null, then we are updating a module
+                if (currentId) {
+                    url += '/' + currentId;
+                    type = 'PUT';
+                }
+                $.ajax({
+                    url: url,
+                    type: type,
+                    data: formData,
+                    processData: false,
+                    contentType: multipart/form-data,
+                    success: function (data) {
+                        if (currentId)
+                            alert('Module has been successfully updated');
+                        else
+                            alert('Module has been successfully updated');
+                        form[0].reset();
+                        $('.dependency-group').remove();
+                        $('#addDependency').prop('disabled', false);
+                        listModules();
+                        modal.modal('hide');
+                        currentId = null;
+                    },
+                    error: function (error) {
+                        console.error(error);
+                    }
+                });
+            }
+        });
+
+        // Delete a module
+        function deleteModule(id) {
+            $.ajax({
+                url: '/api/modules/' + id,
+                type: 'DELETE',
+                success: function (data) {
+                    listModules();
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        // Update a module
+        function updateModule(id, jarFile) {
+            let formData = new FormData();
+            formData.append('jarFile', jarFile);
+
+            $.ajax({
+                url: '/api/module/' + id,
+                type: 'PUT',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (data) {
+                    listModules();
+                },
+                error: function (error) {
+                    console.error(error);
+                }
+            });
+        }
+
+        // Get the list of modules when the page opens
+        listModules();
+
+        modal.on('hide.bs.modal', function (e) {
+            if (form.serializeArray().some(field => field.value)) {
+                if (!confirm('You have unsaved changes, do you really want to close?')) {
+                    e.preventDefault();
+                } else {
+                    form[0].reset();
+                }
+            } else {
+                form[0].reset();
+            }
+        });
+
+        let dependencyCounter = 0;
+        $('#addDependency').on('click', function () {
+            let newDependencyGroup = $('#dependencyTemplate .dependency-group').clone(true);
+            newDependencyGroup.attr('id', 'dependencyGroup' + dependencyCounter++);
+            newDependencyGroup.addClass('new');
+            newDependencyGroup.find('input').val('');
+            $('#dependencies').append(newDependencyGroup);
+            checkDependencies();
+        });
+
+        $('#dependencies').on('input', '.dependency-group input', function () {
+            let currentGroup = $(this).closest('.dependency-group');
+            currentGroup.removeClass('new');
+            // Remove all unfilled, existing dependency groups
+            $('.dependency-group:not(.new)').not('#dependencyTemplate .dependency-group').not(currentGroup).each(function () {
+                let fields = $(this).find('input').map(function () {
+                    return $(this).val();
+                }).get();
+                let isBlank = fields.every(field => field === '');
+                if (isBlank) {
+                    $(this).remove();
+                }
+            });
+            checkDependencies();
+        });
+
+        $('#dependencies').on('click', '.removeDependency', function () {
+            $(this).closest('.dependency-group').remove();
+            checkDependencies();
+        });
+
+        function checkDependencies() {
+            let dependencyInputs = $('.dependency-group').not('#dependencyTemplate .dependency-group').find('input');
+            let noDependencies = dependencyInputs.length === 0;
+            if (noDependencies) {
+                $('#addDependency').prop('disabled', false);
+            } else {
+                let allFilled = dependencyInputs.toArray().every(input => $(input).val() !== '');
+                $('#addDependency').prop('disabled', !allFilled);
+            }
+        }
+    });
+</script>
+</body>
+</html>
